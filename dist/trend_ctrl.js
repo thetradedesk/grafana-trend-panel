@@ -205,8 +205,8 @@ System.register(['app/plugins/sdk', 'lodash', 'app/core/utils/kbn', 'app/core/ti
               data.scopedVars['__name'] = { value: this.series[0].label }; // eslint-disable-line
             }
 
-            if (this.series && this.series.length > 1 && data.value != null) {
-              this.getTrendValue(data, this.series[1], data.value);
+            if (this.series && this.series.length >= 1 && data.value != null && this.panel.targets.length > 1) {
+              this.getTrendValue(data, this.series[1] === undefined ? 0 : this.series[1].stats[this.panel.valueName], data.value);
             } else {
               data.trend = {};
             }
@@ -216,10 +216,9 @@ System.register(['app/plugins/sdk', 'lodash', 'app/core/utils/kbn', 'app/core/ti
           }
         }, {
           key: 'getTrendValue',
-          value: function getTrendValue(data, series, current) {
+          value: function getTrendValue(data, original, current) {
 
             data.trend = {};
-            var original = series.stats[this.panel.valueName];
             // const original = 130.2456;
             var increase = current - original;
 
@@ -235,6 +234,10 @@ System.register(['app/plugins/sdk', 'lodash', 'app/core/utils/kbn', 'app/core/ti
               } else {
                 data.trend.sign = 0;
               }
+              var numDecimals = 2;
+              data.trend.percent = Math.abs(parseFloat(Math.round(percent * 100) / 100).toFixed(numDecimals));
+              data.trend.percentFull = data.trend.percent | 0;
+              data.trend.percentDecimals = Math.round((data.trend.percent % 1).toFixed(numDecimals) * Math.pow(10, numDecimals));
             } else {
               if (current > 0) {
                 data.trend.sign = 1;
@@ -243,13 +246,10 @@ System.register(['app/plugins/sdk', 'lodash', 'app/core/utils/kbn', 'app/core/ti
               } else {
                 data.trend.sign = 0;
               }
-            }
 
-            var numDecimals = 2;
-            data.trend.percent = Math.abs(parseFloat(Math.round(percent * 100) / 100).toFixed(numDecimals));
-            data.trend.percentFull = data.trend.percent | 0;
-            data.trend.percentDecimals = Math.round((data.trend.percent % 1).toFixed(numDecimals) * Math.pow(10, numDecimals));
-            // console.log('>> percent', data.trend.percent, data.trend.percentFull, data.trend.percentDecimals);
+              // Cannot divide by zero, percent change must be represented as NaN
+              data.trend.percent = NaN;
+            }
 
             data.trend.increase = increase;
             data.trend.original = original;
@@ -319,7 +319,9 @@ System.register(['app/plugins/sdk', 'lodash', 'app/core/utils/kbn', 'app/core/ti
           key: 'getColorForValue',
           value: function getColorForValue() {
             if (!_.isFinite(this.data.trend.percent)) {
-              return null;
+              // Trend percent is not representable, probably due to an empty/ missing previous query value
+              // Just return the "no-change color"
+              return this.panel.trend.colors[1];
             }
 
             var value = this.data.trend.percent * this.data.trend.sign;
@@ -374,7 +376,7 @@ System.register(['app/plugins/sdk', 'lodash', 'app/core/utils/kbn', 'app/core/ti
 
                 $signContainer.html(_this3.panel.trend.sign[_this3.data.trend.sign + 1]);
                 $signContainer.css('font-size', _this3.panel.trend.signFontSize);
-                $trendValueContainer.html(_this3.data.trend.original === 0 ? 'NaN' : _this3.data.trend.percentFull);
+                $trendValueContainer.html(!_.isFinite(_this3.data.trend.percent) ? 'NaN' : _this3.data.trend.percentFull);
                 $trendValueContainer.css('font-size', _this3.panel.trend.valueFontSize);
                 $trendDigitContainer.html(_this3.data.trend.percentDecimals && _this3.data.trend.percentDecimals !== 0 ? '.' + _this3.data.trend.percentDecimals : '');
                 $trendDigitContainer.css('font-size', _this3.panel.trend.valueFontSize);
@@ -407,7 +409,7 @@ System.register(['app/plugins/sdk', 'lodash', 'app/core/utils/kbn', 'app/core/ti
               } else {
                 $signContainer.html('');
                 $signContainer.removeAttr('style');
-                if (_this3.panel.trend.show) {
+                if (_this3.panel.trend.show && _this3.panel.targets.length == 1) {
                   $trendValueContainer.html("Provide query 'B' to see trend");
                 } else {
                   $trendValueContainer.html('');

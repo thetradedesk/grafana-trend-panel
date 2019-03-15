@@ -144,8 +144,8 @@ console.log('onDataReceived()', dataList)
       data.scopedVars['__name'] = { value: this.series[0].label }; // eslint-disable-line
     }
 
-    if (this.series && this.series.length > 1 && data.value != null) {
-      this.getTrendValue(data, this.series[1], data.value);
+    if (this.series && this.series.length >= 1 && data.value != null && this.panel.targets.length > 1) {
+      this.getTrendValue(data, this.series[1] === undefined ? 0 : this.series[1].stats[this.panel.valueName], data.value);
     } else {
       data.trend = {}
     }
@@ -154,10 +154,9 @@ console.log('onDataReceived()', dataList)
     console.log(data.trend)
   }
 
-  getTrendValue(data, series, current) {
+  getTrendValue(data, original, current) {
 
-    data.trend = {}
-    const original = series.stats[this.panel.valueName];
+    data.trend = {};
     // const original = 130.2456;
     const increase = current - original;
 
@@ -173,6 +172,10 @@ console.log('onDataReceived()', dataList)
       } else {
         data.trend.sign = 0;
       }
+      const numDecimals = 2;
+      data.trend.percent = Math.abs(parseFloat(Math.round(percent * 100) / 100).toFixed(numDecimals));
+      data.trend.percentFull = data.trend.percent | 0;
+      data.trend.percentDecimals = Math.round((data.trend.percent % 1).toFixed(numDecimals) * Math.pow(10, numDecimals))
     } else {
       if (current > 0) {
         data.trend.sign = 1;
@@ -180,14 +183,11 @@ console.log('onDataReceived()', dataList)
         data.trend.sign = -1;
       } else {
         data.trend.sign = 0;
-      }      
-    }
+      }     
 
-    const numDecimals = 2;
-    data.trend.percent = Math.abs(parseFloat(Math.round(percent * 100) / 100).toFixed(numDecimals));
-    data.trend.percentFull = data.trend.percent | 0;
-    data.trend.percentDecimals = Math.round((data.trend.percent % 1).toFixed(numDecimals) * Math.pow(10, numDecimals))
-    // console.log('>> percent', data.trend.percent, data.trend.percentFull, data.trend.percentDecimals);
+      // Cannot divide by zero, percent change must be represented as NaN
+      data.trend.percent = NaN;
+    }
 
     data.trend.increase = increase;
     data.trend.original = original;
@@ -256,7 +256,9 @@ console.log('onDataReceived()', dataList)
 
   getColorForValue() {
     if (!_.isFinite(this.data.trend.percent)) {
-      return null;
+      // Trend percent is not representable, probably due to an empty/ missing previous query value
+      // Just return the "no-change color"
+      return this.panel.trend.colors[1];
     }
 
     var value = this.data.trend.percent * this.data.trend.sign;
@@ -315,7 +317,7 @@ console.log('onDataReceived()', dataList)
 
         $signContainer.html(this.panel.trend.sign[this.data.trend.sign + 1]);
         $signContainer.css('font-size', this.panel.trend.signFontSize);
-        $trendValueContainer.html((this.data.trend.original === 0)? 'NaN': this.data.trend.percentFull);
+        $trendValueContainer.html(!_.isFinite(this.data.trend.percent)? 'NaN': this.data.trend.percentFull);
         $trendValueContainer.css('font-size', this.panel.trend.valueFontSize);
         $trendDigitContainer.html((this.data.trend.percentDecimals && this.data.trend.percentDecimals !== 0)? '.' + this.data.trend.percentDecimals : '');
 		    $trendDigitContainer.css('font-size', this.panel.trend.valueFontSize);
@@ -351,7 +353,7 @@ console.log('onDataReceived()', dataList)
       } else {
         $signContainer.html('');
         $signContainer.removeAttr('style');
-        if (this.panel.trend.show){
+        if (this.panel.trend.show && this.panel.targets.length == 1){
           $trendValueContainer.html("Provide query 'B' to see trend");
         }
         else{
