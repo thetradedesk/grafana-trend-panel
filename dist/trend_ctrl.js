@@ -75,7 +75,10 @@ System.register(['app/plugins/sdk', 'lodash', 'app/core/utils/kbn', 'app/core/ti
           _this.$rootScope = $rootScope;
 
           var panelDefaults = {
-            bgColor: null,
+            isValueColored: false,
+            colors: ['#d44a3a', '#e5ac0e', '#299c46'],
+            colorInBackground: false,
+            thresholds: "",
             prefix: '',
             postfix: '',
             valueName: 'avg',
@@ -145,12 +148,12 @@ System.register(['app/plugins/sdk', 'lodash', 'app/core/utils/kbn', 'app/core/ti
             this.$timeout.cancel(this.nextTickPromise);
           }
         }, {
-          key: 'onTrendColorChange',
-          value: function onTrendColorChange(panelColorIndex) {
+          key: 'onColorChange',
+          value: function onColorChange(colors, panelColorIndex) {
             var _this2 = this;
 
             return function (color) {
-              _this2.panel.trend.colors[panelColorIndex] = color;
+              colors[panelColorIndex] = color;
               _this2.render();
             };
           }
@@ -203,6 +206,10 @@ System.register(['app/plugins/sdk', 'lodash', 'app/core/utils/kbn', 'app/core/ti
               // Add $__name variable for using in prefix or postfix
               data.scopedVars = _.extend({}, this.panel.scopedVars);
               data.scopedVars['__name'] = { value: this.series[0].label }; // eslint-disable-line
+            } else {
+              data.value = NaN;
+              data.valueRounded = NaN;
+              data.valueFormatted = null;
             }
 
             if (this.series && this.series.length >= 1 && data.value != null && this.panel.targets.length > 1) {
@@ -309,15 +316,15 @@ System.register(['app/plugins/sdk', 'lodash', 'app/core/utils/kbn', 'app/core/ti
           }
         }, {
           key: 'invertColorOrder',
-          value: function invertColorOrder() {
-            var tmp = this.panel.trend.colors[0];
-            this.panel.trend.colors[0] = this.panel.trend.colors[2];
-            this.panel.trend.colors[2] = tmp;
+          value: function invertColorOrder(colors) {
+            var tmp = colors[0];
+            colors[0] = colors[2];
+            colors[2] = tmp;
             this.render();
           }
         }, {
-          key: 'getColorForValue',
-          value: function getColorForValue() {
+          key: 'getColorForTrendValue',
+          value: function getColorForTrendValue() {
             if (!_.isFinite(this.data.trend.percent)) {
               // Trend percent is not representable, probably due to an empty/ missing previous query value
               // Just return the "no-change color"
@@ -337,6 +344,25 @@ System.register(['app/plugins/sdk', 'lodash', 'app/core/utils/kbn', 'app/core/ti
             } else {
               return this.panel.trend.colors[2];
             }
+          }
+        }, {
+          key: 'getColorForValue',
+          value: function getColorForValue() {
+            if (!_.isFinite(this.data.value)) {
+              return null;
+            }
+
+            var thresholds = this.panel.thresholds.split(',').map(function (strVale) {
+              return Number(strVale.trim());
+            });
+
+            for (var i = thresholds.length; i > 0; i--) {
+              if (this.data.value >= thresholds[i - 1]) {
+                return this.panel.colors[i];
+              }
+            }
+
+            return _.first(this.panel.colors);
           }
         }, {
           key: 'link',
@@ -363,27 +389,21 @@ System.register(['app/plugins/sdk', 'lodash', 'app/core/utils/kbn', 'app/core/ti
               if (_this3.data.valueFormatted) {
                 $valueContainer.html(_this3.data.valueFormatted);
               } else {
-                $valueContainer.html('0');
-                // $valueContainer.html('loading...');
-                // $valueContainer.css({
-                //     'opacity': 0.2,
-                //     'font-size': '30%',
-                //     'font-weight': 10
-                //   });
+                $valueContainer.html('N/A');
               }
 
               if (_this3.panel.trend.show && _this3.data.trend.hasOwnProperty('percent') && _this3.data.trend.hasOwnProperty('sign')) {
 
                 $signContainer.html(_this3.panel.trend.sign[_this3.data.trend.sign + 1]);
                 $signContainer.css('font-size', _this3.panel.trend.signFontSize);
-                $trendValueContainer.html(!_.isFinite(_this3.data.trend.percent) ? 'NaN' : _this3.data.trend.percentFull);
+                $trendValueContainer.html(!_.isFinite(_this3.data.trend.percent) ? 'N/A' : _this3.data.trend.percentFull);
                 $trendValueContainer.css('font-size', _this3.panel.trend.valueFontSize);
                 $trendDigitContainer.html(_this3.data.trend.percentDecimals && _this3.data.trend.percentDecimals !== 0 ? '.' + _this3.data.trend.percentDecimals : '');
                 $trendDigitContainer.css('font-size', _this3.panel.trend.valueFontSize);
                 $unitContainer.html('%');
                 $unitContainer.css('font-size', _this3.panel.trend.unitFontSize);
-                var backgroundColor = _this3.panel.trend.colorInBackground ? _this3.getColorForValue() : '#cccccc';
-                var foregroundColor = _this3.panel.trend.colorInBackground ? '#cccccc' : _this3.getColorForValue();
+                var backgroundColor = _this3.panel.trend.colorInBackground ? _this3.getColorForTrendValue() : '#cccccc';
+                var foregroundColor = _this3.panel.trend.colorInBackground ? '#cccccc' : _this3.getColorForTrendValue();
 
                 $trendContainer.removeAttr('style');
                 if (_this3.panel.trend.colorInBackground) {
@@ -421,10 +441,18 @@ System.register(['app/plugins/sdk', 'lodash', 'app/core/utils/kbn', 'app/core/ti
                 $diffContainer.removeAttr('style');
               }
 
-              if (_this3.panel.bgColor) {
-                $panelContainer.css('background-color', _this3.panel.bgColor);
+              if (_this3.panel.isValueColored) {
+                var color = _this3.getColorForValue();
+                if (_this3.panel.colorInBackground) {
+                  $panelContainer.css('background-color', color);
+                  $panelContainer.css('color', '');
+                } else {
+                  $panelContainer.css('color', color);
+                  $panelContainer.css('background-color', '');
+                }
               } else {
                 $panelContainer.css('background-color', 'transparent');
+                $panelContainer.css('color', '');
               }
             });
           }

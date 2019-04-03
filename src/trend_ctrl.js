@@ -12,7 +12,10 @@ export class TrendCtrl extends MetricsPanelCtrl {
     this.$rootScope = $rootScope;
 
     const panelDefaults = {
-      bgColor: null,
+      isValueColored : false,
+      colors: ['#d44a3a', '#e5ac0e', '#299c46'],
+      colorInBackground : false,
+      thresholds : "",
       prefix: '',
       postfix: '',
       valueName: 'avg',
@@ -86,9 +89,9 @@ console.log('onDataReceived()', dataList)
     this.$timeout.cancel(this.nextTickPromise);
   }
 
-  onTrendColorChange(panelColorIndex) {
+  onColorChange(colors, panelColorIndex) {
     return color => {
-      this.panel.trend.colors[panelColorIndex] = color;
+      colors[panelColorIndex] = color;
       this.render();
     };
   }
@@ -142,6 +145,11 @@ console.log('onDataReceived()', dataList)
       // Add $__name variable for using in prefix or postfix
       data.scopedVars = _.extend({}, this.panel.scopedVars);
       data.scopedVars['__name'] = { value: this.series[0].label }; // eslint-disable-line
+    }
+    else {
+      data.value = NaN;
+      data.valueRounded = NaN;
+      data.valueFormatted = null;
     }
 
     if (this.series && this.series.length >= 1 && data.value != null && this.panel.targets.length > 1) {
@@ -247,14 +255,14 @@ console.log('onDataReceived()', dataList)
     return result;
   }
 
-  invertColorOrder() {
-    const tmp = this.panel.trend.colors[0];
-    this.panel.trend.colors[0] = this.panel.trend.colors[2];
-    this.panel.trend.colors[2] = tmp;
+  invertColorOrder(colors) {
+    const tmp = colors[0];
+    colors[0] = colors[2];
+    colors[2] = tmp;
     this.render();
   }
 
-  getColorForValue() {
+  getColorForTrendValue() {
     if (!_.isFinite(this.data.trend.percent)) {
       // Trend percent is not representable, probably due to an empty/ missing previous query value
       // Just return the "no-change color"
@@ -276,6 +284,27 @@ console.log('onDataReceived()', dataList)
     else{
       return this.panel.trend.colors[2];
     }
+  }
+
+  // Trend colors and current value colors use a different thresholding mechanism- 
+  // trend colors thresholds are inclusive at both ends while value colors are not, 
+  // hence the separate functions
+  getColorForValue() {
+    if (!_.isFinite(this.data.value)) {
+      return null;
+    }
+
+    var thresholds = this.panel.thresholds.split(',').map(strVale => {
+      return Number(strVale.trim());
+    });
+
+    for (let i = thresholds.length; i > 0; i--) {
+      if (this.data.value >= thresholds[i - 1]) {
+        return this.panel.colors[i];
+      }
+    }
+  
+    return _.first(this.panel.colors);
   }
 
   //
@@ -302,13 +331,7 @@ console.log('onDataReceived()', dataList)
       if (this.data.valueFormatted) {
         $valueContainer.html(this.data.valueFormatted);
       } else {
-        $valueContainer.html('0');
-        // $valueContainer.html('loading...');
-        // $valueContainer.css({
-        //     'opacity': 0.2,
-        //     'font-size': '30%',
-        //     'font-weight': 10
-        //   });
+        $valueContainer.html('N/A');
       }
 
       if (this.panel.trend.show && 
@@ -317,14 +340,14 @@ console.log('onDataReceived()', dataList)
 
         $signContainer.html(this.panel.trend.sign[this.data.trend.sign + 1]);
         $signContainer.css('font-size', this.panel.trend.signFontSize);
-        $trendValueContainer.html(!_.isFinite(this.data.trend.percent)? 'NaN': this.data.trend.percentFull);
+        $trendValueContainer.html(!_.isFinite(this.data.trend.percent)? 'N/A': this.data.trend.percentFull);
         $trendValueContainer.css('font-size', this.panel.trend.valueFontSize);
         $trendDigitContainer.html((this.data.trend.percentDecimals && this.data.trend.percentDecimals !== 0)? '.' + this.data.trend.percentDecimals : '');
 		    $trendDigitContainer.css('font-size', this.panel.trend.valueFontSize);
         $unitContainer.html('%');
         $unitContainer.css('font-size', this.panel.trend.unitFontSize);
-        var backgroundColor =  this.panel.trend.colorInBackground ? this.getColorForValue() : '#cccccc';
-        var foregroundColor = this.panel.trend.colorInBackground ? '#cccccc' : this.getColorForValue();
+        var backgroundColor =  this.panel.trend.colorInBackground ? this.getColorForTrendValue() : '#cccccc';
+        var foregroundColor = this.panel.trend.colorInBackground ? '#cccccc' : this.getColorForTrendValue();
 
         $trendContainer.removeAttr('style');
         if (this.panel.trend.colorInBackground){
@@ -367,10 +390,20 @@ console.log('onDataReceived()', dataList)
 
       }
 
-      if (this.panel.bgColor) {
-        $panelContainer.css('background-color', this.panel.bgColor);
-      } else {
+      if (this.panel.isValueColored){
+        var color = this.getColorForValue();
+        if (this.panel.colorInBackground) {
+          $panelContainer.css('background-color', color);
+          $panelContainer.css('color', '');
+        }
+        else{
+          $panelContainer.css('color', color);
+          $panelContainer.css('background-color', '');
+        } 
+      }
+      else {
         $panelContainer.css('background-color', 'transparent');
+        $panelContainer.css('color', '');
       }
     });
   }
